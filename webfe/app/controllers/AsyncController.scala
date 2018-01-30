@@ -2,7 +2,7 @@ package controllers
 
 
 
-import cats.data.{Kleisli, EitherT, StateT, WriterT}
+import cats.data.{Kleisli, EitherT}
 import cats.implicits._
 import freestyle.free._
 import freestyle.free.implicits._
@@ -36,17 +36,6 @@ import play.api.http.Writeable
   // core data type - either terminate computation with a Left[Result] or
   // continue with a Right[A]
   type FutureOpt[A] = EitherT[Future, Result, A] 
-
-  // add in State to avoid having to repetitively read/write to the DB
-  case class State(
-    record: Map[String, JsValue]
-  )
-  
-  type WithState[A] = StateT[FutureOpt, State, A]
-
-  // // write out Pages (path state).
-  type Pages = List[String]
-  type WithPathState[A] = WriterT[WithState, Pages, A]
 
   // thread the immutable request through the transaction
   type ActionK[A] = Kleisli[FutureOpt, Request[AnyContent], A]
