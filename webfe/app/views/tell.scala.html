@@ -1,0 +1,21 @@
+@import play.api.Configuration
+
+@(key: String, msg: String)(implicit messages: Messages, request: Request[_])
+
+@main(s"heading.$key") {
+
+<article class="content__body">
+        <h1 class="heading-large">@Messages(s"heading.$key")</h1>
+
+	<div>
+	@{msg}
+	</div>
+	
+	
+        <a class="button" type="submit" id="continue-button" href=".">
+		  @Messages("continue")
+		</a>
+
+    </article>
+
+}

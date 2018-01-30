@@ -1,0 +1,6 @@
+**/target
+**/.ensime
+.ensime_cache
+.idea
+**.png
+**~

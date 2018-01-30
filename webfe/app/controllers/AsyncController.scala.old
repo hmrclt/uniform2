@@ -1,0 +1,64 @@
+package controllers
+
+import javax.inject._
+
+import play.api._
+import play.api.mvc._
+import hmrclt._
+import freestyle.free._
+import freestyle.free.implicits._
+import scala.collection.mutable.{Map => MMap}
+import cats.implicits._
+import play.api.data.{ Form, Mapping }
+import play.api.data.Forms._
+import scala.concurrent.Future
+import views.{html => gdspages}
+import play.api.http.Writeable
+
+@Singleton class AsyncController @Inject()(
+  cc: ControllerComponents
+) extends AbstractController(cc) with i18n.I18nSupport {
+
+  type FutureOpt[A] = EitherT[Future, Termination, A]
+  type ActionK[A] = Kleisli[FutureOpt, Request, A]
+
+  type ActionFunc[A] = Request[AnyContent] => Future[Either[Result,A]]  
+
+  val data = MMap.empty[String, Any]
+
+  implicit val interactionHandler = new GDS.Handler[ActionFunc] {
+
+    override def askBoolean(id: String): ActionFunc[Boolean] = ???
+
+    override def askString(id: String): ActionFunc[String] = ???
+
+    override def askInt(id: String): ActionFunc[Int] = ???
+
+    override def tell(id: String, msg: String): ActionFunc[Unit] = ???
+
+    override def askAddress(id: String): ActionFunc[List[String]] = ???
+  }
+
+  implicit val interactionHandler2 = new SDILInteraction.Handler[ActionFunc] {
+    override def askLitres(id: String): ActionFunc[(Long, Long)] = ???
+  }
+
+
+  /**
+   * Create an Action to render an HTML page.
+   *
+   * The configuration in the `routes` file means that this method
+   * will be called when the application receives a `GET` request with
+   * a path of `/`.
+   */
+  def index(): Action[AnyContent] =
+
+    SDIL.instance.program[GDS.Op].interpret[ActionFunc] match {
+      case Left(a) => a
+      case Right(b) => Action { implicit request =>
+        data.clear()
+        Redirect(request.uri)
+      }
+    }
+
+}

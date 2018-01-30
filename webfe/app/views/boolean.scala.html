@@ -1,0 +1,19 @@
+@import play.api.Configuration
+
+@(key: String, form: Form[Boolean])(implicit messages: Messages, request: Request[_])
+
+@main(s"heading.$key") {
+
+<article class="content__body">
+        <h1 class="heading-large">@Messages(s"heading.$key")</h1>
+
+    @helper.form(action = play.api.mvc.Call("post", ".")) {
+        @helper.inputRadioGroup(form(key), Seq("true" -> Messages("yes"), "false" -> Messages("no")))
+        <button class="button" type="submit" id="continue-button">
+		  @Messages("continue")
+		</button>
+    }
+
+    </article>
+
+}
