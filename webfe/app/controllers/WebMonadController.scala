@@ -20,20 +20,21 @@ import play.api.http.Writeable
 )(implicit ec: ExecutionContext) extends AbstractController(cc) with i18n.I18nSupport {
 
   // CrapDB(TM)
-  val _data = MMap.empty[(String,String), Any]
+  val _data = MMap.empty[String, DbState]
 
   // simulated DB calls, assumed to be expensive
-  def dataGet[A](session: String, id: String): Future[Option[A]] =
-    _data.get((session, id)).map{_.asInstanceOf[A]}.pure[Future]
+  def dataGet(session: String): Future[DbState] = {
+    println("Db read")
+    _data.getOrElse(session, Map.empty).pure[Future]
+  }
 
-  def dataPut[A](session: String, id: String)(elem: A): Future[Unit] = {
-    _data((session, id)) = elem
+  def dataPut[A](session: String, newData: DbState): Future[Unit] = {
+    println("Db write")    
+    _data(session) = newData
   }.pure[Future]
 
   // add in State to avoid having to repetitively read/write to the DB
-  case class DbState(
-    record: Map[String, String]
-  )
+  type DbState = Map[String,Any]
 
   // // write out Pages (path state).
   type Path = List[String]
@@ -54,28 +55,39 @@ import play.api.http.Writeable
           implicit val request: Request[AnyContent] = r
           val session = request.session("uuid")
 
-          dataGet[A](session, id).map { x =>
-            x match {
+          { st.get(id) match {
               case Some(v: A) => (List.empty[String], st, v.asRight[Result])
               case _ => {
-                val e = if (request.method.toLowerCase == "post") {
+                if (request.method.toLowerCase == "post") {
                   form.bindFromRequest.fold(
                     formWithErrors => {
-                      BadRequest(render(id, formWithErrors, implicitly))
+                      (
+                        List.empty[String],
+                        st,
+                        BadRequest(render(id, formWithErrors, implicitly)).asLeft[A]
+                      )
                     },
                     formData => {
-                      dataPut(session, id)(formData)
-                      Redirect(request.uri)
+                      //dataPut(session, id)(formData)
+                      (
+                        List.empty[String],
+                        st + (id -> formData),
+                        Redirect(request.uri).asLeft[A]
+                      )
                     }
                   )
                 } else {
-                  Ok(render(id, form, implicitly))
+                  (
+                    List.empty[String],
+                    st,
+                    Ok(render(id, form, implicitly)).asLeft[A]
+                  )
                 }
 
-                (List.empty[String], st, e.asLeft[A])
+
               }
-            }
-          }
+            
+          }}.pure[Future]
         }
       }
     }
@@ -119,21 +131,32 @@ import play.api.http.Writeable
    * will be called when the application receives a `GET` request with
    * a path of `/`.
    */
-  def index = Action.async { request =>
+  def index(id: String) = Action.async { request =>
 
-    if (request.session.get("uuid").isDefined) {
-      SDIL.instance.program[GDS.Op]
-        .interpret[WebMonad].value
-        .runA(request, DbState(Map.empty))
-        .map { _.fold(
-          identity,
-          _ => Ok("Fin")
-        ) }
-    } else {
+    request.session.get("uuid").fold {
       Redirect(".").withSession{
         request.session + ( "uuid" -> java.util.UUID.randomUUID.toString )
       }.pure[Future]
+    }{ sessionUUID =>
+      dataGet(sessionUUID).flatMap { initialData => 
+
+      SDIL.instance.program[GDS.Op]
+        .interpret[WebMonad].value
+        .run(request, initialData)
+        .flatMap {case (path,state,a) =>
+          {
+            if (state != initialData)
+              dataPut(sessionUUID, state)
+            else
+              ().pure[Future]
+          }.map { _ =>
+            a.fold(
+              identity,
+              _ => Ok("Fin")
+            )
+          }
+        }
+      }
     }
   }
-
 }
