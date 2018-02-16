@@ -29,11 +29,11 @@ object LogicTable extends App {
       List("a", "b", "c").picks(id)
 
     override def askInt(id: String): TableState[Int] =
-      List(1,2).picks(id)
+      List(0,250000,500000,750000,1000000).picks(id)
 
     override def tell(id: String, msg: String): TableState[Unit] =
       List(())
-        .map{x => x.pure[TableState].tell(List(s"User told $msg"))}.combineAll
+        .map{x => x.pure[TableState].tell(List(s"Told $msg"))}.combineAll
 
     override def askAddress(id: String): TableState[List[String]] =
       //Writer.apply(
@@ -44,6 +44,15 @@ object LogicTable extends App {
       //)
   }
 
-  println(SDIL.instance.program[GDS.Op].interpret[TableState])
+  val out = SDIL.instance.program[GDS.Op].interpret[TableState]
+  out.written.zipWithIndex.map { case (steps, i) =>
+    println(s"\nScenario ${i+1}")
+    steps.foreach{ a => 
+      println(s"  $a")
+    }
+
+  }
+
+
 
 }

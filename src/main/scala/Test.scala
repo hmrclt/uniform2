@@ -42,8 +42,8 @@ case class Company(utr: String, address: List[String])
     * Mandatory := p + b ≥ 1M ∨ c ∨ i
     * Voluntary := p + b < 1M ∧ b ≠ 0
     */  
-  def liabilityCalc(p: Int, b: Int, c: Boolean, i: Boolean): Set[String] = Set(
-    if (p + b >= 1000000 || c || i) Some("Mandatory") else None,
+  def liabilityCalc(p: Int, b: Int, c: Boolean, i: Int): Set[String] = Set(
+    if (p + b + i >= 1000000 || c) Some("Mandatory") else None,
     if (p + b < 1000000 && b != 0) Some("Voluntary") else None
   ).flatten
 
@@ -51,10 +51,10 @@ case class Company(utr: String, address: List[String])
     p <- gds.askInt(     "produced")
     b <- gds.askInt(     "copackedByOthers")
     c <- gds.askBoolean( "copacks")
-    i <- gds.askBoolean( "imports")
+    i <- gds.askInt( "imports")
     _ <- gds.tell(       "output", liabilityCalc(p,b,c,i).toString)
-  } yield ()
 
+  } yield ()
 //   def registration[F[_]]= for {
 // //    company <- gds.companyLookup("producer")
 //     manufactures <- askOptLitres("manufactures")

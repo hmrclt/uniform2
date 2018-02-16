@@ -9,6 +9,7 @@ import javax.inject._
 import play.api._
 import play.api.data.{ Form, Mapping }
 import play.api.data.Forms._
+import play.api.libs.json.{ Format, JsNull, JsObject, JsValue, Json }
 import play.api.mvc.{ControllerComponents, AbstractController, Result, Request, AnyContent }
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.collection.mutable.{Map => MMap}
@@ -23,7 +24,7 @@ import play.api.http.Writeable
   val _data = MMap.empty[String, DbState]
 
   // simulated DB calls, assumed to be expensive
-  def dataGet(session: String): Future[DbState] = {
+  def dataGet[A](session: String): Future[DbState] = {
     println("Db read")
     _data.getOrElse(session, Map.empty).pure[Future]
   }
@@ -34,60 +35,79 @@ import play.api.http.Writeable
   }.pure[Future]
 
   // add in State to avoid having to repetitively read/write to the DB
-  type DbState = Map[String,Any]
+  type DbState = Map[String,JsValue]
 
   // // write out Pages (path state).
   type Path = List[String]
 
-  type WebInner[A] = RWST[Future, Request[AnyContent], Path, DbState, A]
+  type WebInner[A] = RWST[Future, (String, Request[AnyContent]), Path, (Path, DbState), A]
   type WebMonad[A] = EitherT[WebInner, Result, A]
 
   implicit val interactionHandler = new GDS.Handler[WebMonad] {
 
     private def askA[A, B: Writeable](id: String)(mapping: Mapping[A])(
       render: (String, Form[A], Request[AnyContent]) => B
-    ): WebMonad[A] = {
+    )(implicit f: Format[A]): WebMonad[A] = {
       val form = Form(single(id -> mapping))
 
       EitherT[WebInner, Result, A] {
-        RWST { (r, st) =>
+        RWST { case ((targetId, r), (path,st)) =>
 
           implicit val request: Request[AnyContent] = r
-          val session = request.session("uuid")
 
-          { st.get(id) match {
-              case Some(v: A) => (List.empty[String], st, v.asRight[Result])
-              case _ => {
-                if (request.method.toLowerCase == "post") {
-                  form.bindFromRequest.fold(
-                    formWithErrors => {
-                      (
-                        List.empty[String],
-                        st,
-                        BadRequest(render(id, formWithErrors, implicitly)).asLeft[A]
-                      )
-                    },
-                    formData => {
-                      //dataPut(session, id)(formData)
-                      (
-                        List.empty[String],
-                        st + (id -> formData),
-                        Redirect(request.uri).asLeft[A]
-                      )
-                    }
-                  )
-                } else {
+          val post = request.method.toLowerCase == "post"
+          val method = request.method.toLowerCase
+          val data = st.get(id)
+
+          {
+
+            println((method, data, targetId, id))
+            (method, data, targetId) match {
+              case ("get", None, `id`) => (
+                id.pure[List],
+                (path, st),
+                Ok(render(id, form, implicitly)).asLeft[A]
+              )
+              case ("get", Some(json), `id`) => (
+                id.pure[List],
+                (path, st),
+                Ok(render(id, form.fill(json.as[A]), implicitly)).asLeft[A]
+              )
+              case ("get", Some(json), _) => (
+                id.pure[List],
+                (id :: path, st),
+                json.as[A].asRight[Result]
+              )
+              case ("post", Some(json), _) => (
+                id.pure[List],
+                (id :: path, st),
+                json.as[A].asRight[Result]
+              )
+              case ("post", _, `id`) => form.bindFromRequest.fold(
+                formWithErrors => {
                   (
-                    List.empty[String],
-                    st,
-                    Ok(render(id, form, implicitly)).asLeft[A]
+                    id.pure[List],
+                    (path, st),
+                    BadRequest(render(id, formWithErrors, implicitly)).asLeft[A]
+                  )
+                },
+                formData => {
+                  (
+                    id.pure[List],
+                    (path, st + (id -> Json.toJson(formData))),
+                    formData.asRight[Result]
                   )
                 }
+              )
+              case ("post", _, _) => (
+                id.pure[List],
+                (path, st),
+                Redirect(s"/$id").asLeft[A]
+              )
+            }
 
 
-              }
-            
-          }}.pure[Future]
+          }.pure[Future]
         }
       }
     }
@@ -115,7 +135,36 @@ import play.api.http.Writeable
       gdspages.int(a,b)
     }
 
-    override def tell(id: String, msg: String): WebMonad[Unit] = ???
+    override def tell(id: String, msg: String): WebMonad[Unit] = {
+
+      EitherT[WebInner, Result, Unit] {
+        RWST { case ((targetId, r), (path, st)) =>
+
+          implicit val request: Request[AnyContent] = r
+
+          st.get(id) match {
+            case Some(_) =>
+              (
+                id.pure[List],
+                (id :: path, st),
+                ().asRight[Result]
+              ).pure[Future]
+            case None if (request.method.toLowerCase == "post") =>
+              (
+                id.pure[List],
+                (id :: path, st + (id -> JsNull)), 
+                ().asRight[Result]
+              ).pure[Future]
+            case None =>
+              (
+                id.pure[List],
+                (path, st),
+                Ok(gdspages.tell(id, msg)).asLeft[Unit]
+              ).pure[Future]
+          }
+        }
+      }
+    }
 
     override def askAddress(id: String): WebMonad[List[String]] = ???
   }
@@ -124,13 +173,6 @@ import play.api.http.Writeable
     override def askLitres(id: String): WebMonad[(Long, Long)] = ???
   }  
 
-  /**
-   * Create an Action to render an HTML page.
-   *
-   * The configuration in the `routes` file means that this method
-   * will be called when the application receives a `GET` request with
-   * a path of `/`.
-   */
   def index(id: String) = Action.async { request =>
 
     request.session.get("uuid").fold {
@@ -140,22 +182,32 @@ import play.api.http.Writeable
     }{ sessionUUID =>
       dataGet(sessionUUID).flatMap { initialData => 
 
-      SDIL.instance.program[GDS.Op]
-        .interpret[WebMonad].value
-        .run(request, initialData)
-        .flatMap {case (path,state,a) =>
-          {
-            if (state != initialData)
-              dataPut(sessionUUID, state)
-            else
-              ().pure[Future]
-          }.map { _ =>
-            a.fold(
-              identity,
-              _ => Ok("Fin")
-            )
+        def parse(in: String): Map[String, JsValue] =
+          Json.parse(in) match { 
+            case JsObject(v) => v.toList.toMap
+            case _ => throw new IllegalArgumentException
           }
-        }
+
+        val data = request.getQueryString("restoreState")
+          .fold(initialData)(parse)
+
+        SDIL.instance.program[GDS.Op]
+          .interpret[WebMonad].value
+          .run((id, request), (List.empty[String], data))
+          .flatMap {case (_,(path,state),a) =>
+            {
+
+              if (state != initialData)
+                dataPut(sessionUUID, state)
+              else
+                ().pure[Future]
+            }.map { _ =>
+              a.fold(
+                identity,
+                _ => Ok("Fin")
+              )
+            }
+          }
       }
     }
   }
