@@ -5,13 +5,13 @@
 
 # An example controller showing a sample home page
 + nocsrf
-GET     /                           controllers.WebMonadController.index(id = "")
+GET     /                           controllers.SDILController.index2(id = "")
 + nocsrf
-GET     /:id                           controllers.WebMonadController.index(id: String)
+GET     /:id                           controllers.SDILController.index2(id: String)
 + nocsrf
-POST     /                           controllers.WebMonadController.index(id = "")
+POST     /                           controllers.SDILController.index2(id = "")
 + nocsrf
-POST     /:id                           controllers.WebMonadController.index(id: String)
+POST     /:id                           controllers.SDILController.index2(id: String)
 
 # Map static resources from the /public folder to the /assets URL path
 GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
