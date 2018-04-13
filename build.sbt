@@ -28,6 +28,7 @@ lazy val webfe = project
   .settings(commonSettings)
   .settings(
     libraryDependencies += guice,
+    libraryDependencies += "org.scalatestplus.play" %% "scalatestplus-play" % "3.1.2" % "test"
   ).dependsOn(common)
 
 lazy val selenium = project

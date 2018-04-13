@@ -5,13 +5,13 @@
 
 # An example controller showing a sample home page
 + nocsrf
-GET     /                           controllers.SDILController.index2(id = "")
+GET     /                           controllers.SDILController.index(id = "")
 + nocsrf
-GET     /:id                           controllers.SDILController.index2(id: String)
+GET     /:id                           controllers.SDILController.index(id: String)
 + nocsrf
-POST     /                           controllers.SDILController.index2(id = "")
+POST     /                           controllers.SDILController.index(id = "")
 + nocsrf
-POST     /:id                           controllers.SDILController.index2(id: String)
+POST     /:id                           controllers.SDILController.index(id: String)
 
 # Map static resources from the /public folder to the /assets URL path
 GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
